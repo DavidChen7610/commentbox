@@ -1,3 +1,4 @@
+# coding=utf-8
 import time
 
 from mongoengine.connection import disconnect
@@ -11,6 +12,12 @@ DISCOVER_URL = 'http://music.163.com/discover/artist/cat?id={}&initial={}'
 ARTIST_URL = 'http://music.163.com/artist?id={}'
 SONG_URL = 'http://music.163.com/song?id={}'
 COMMENTS_URL = 'http://music.163.com/weapi/v1/resource/comments/R_SO_4_{}'  # noqa
+
+# =========================
+HOME_URL = 'http://music.163.com/#/user/home?id={}'
+PLAYLIST_URL = 'http://music.163.com/playlist?id={}'
+# 评论完整API before_time=0 获取最新时间 limit=100 返回100条 默认时间降序(从新到旧)
+COMMENTS_URL_ = 'http://music.163.com/weapi/v1/resource/comments/R_SO_4_{}?limit=100&before_time={}&compareUserLocation=true&commentId=0&composeConcert=true'
 
 
 def parser_artist_list(cat_id, initial_id):
@@ -108,3 +115,92 @@ def parser_song(song_id, artist):
     song.save()
     time.sleep(1)
     return song
+
+
+# =========================
+# 用户主页暂时不能爬取(主要歌单部分是iframe name="contentFrame"动态请求API加载的[因API-post参数是Token暂无法获取])
+def parser_playlist_list(user_id):
+    tree = get_tree(HOME_URL.format(user_id))
+    artist_items = tree.xpath('//a[contains(@class, "msk")]/@href')
+
+    return [item.split('=')[1] for item in artist_items]
+
+
+def unprocess_playlist_list():
+    create_app()
+    unprocess = Process.objects.filter(status=Process.PENDING)
+    return [p.id for p in unprocess]
+
+
+# 爬取歌单数据
+def parser_playlist(playlist_id):
+    create_app()
+    process = Process.get_or_create(id=playlist_id)
+    if process.is_success:
+        return
+
+    print 'Starting parser_playlist playlist_id: {}'.format(playlist_id)
+    start = time.time()
+    process = Process.get_or_create(id=playlist_id)
+
+    tree = get_tree(PLAYLIST_URL.format(playlist_id))
+
+    artist = Artist.objects.filter(id=playlist_id)
+    if not artist:
+        playlist_name = tree.xpath('//h2[@class="f-ff2 f-brk"]/text()')[0]
+        print 'playlist_name: ' + playlist_name
+        picture = tree.xpath(
+            '//div[contains(@class, "cover u-cover u-cover-dj")]//img/@src')[0]
+        artist = Artist(id=playlist_id, name=playlist_name, picture=picture)
+        artist.save()
+    else:
+        artist = artist[0]
+    song_items = tree.xpath('//div[@id="song-list-pre-cache"]//a/@href')
+    songs = []
+    for item in song_items:
+        song_id = item.split('=')[1]
+        song = parser_song(song_id, artist)
+        parser_comments(song_id, 0, song)
+        if song is not None:
+            songs.append(song)
+    artist.songs = songs
+    artist.save()
+    process.make_succeed()
+    print 'Finished parser_playlist playlist_id: {} Cost: {}'.format(
+        playlist_id, time.time() - start)
+
+
+# 爬取指定song的所有评论
+def parser_comments(song_id, before_time, song):
+    print 'Starting parser_comments song_id: {}'.format(song_id)
+    print 'song_name: ' + song.name
+    start = time.time()
+
+    r = post(COMMENTS_URL_.format(song_id, before_time))
+    if r.status_code != 200:
+        print 'API Error: Song {}'.format(song_id)
+        return
+    data = r.json()
+
+    comments = []
+    for comment_ in data['comments']:
+        comment_id = comment_['commentId']
+        content = comment_['content']
+        like_count = comment_['likedCount']
+        user = comment_['user']
+        before_time = comment_['time']
+        if not user:
+            continue
+        user = User.get_or_create(id=user['userId'], name=user['nickname'],
+                                  picture=user['avatarUrl'])
+        comment = Comment.get_or_create(id=comment_id, content=content,
+                                        like_count=like_count, user=user,
+                                        song=song)
+        comment.save()
+        comments.append(comment)
+    song.comments = comments
+    song.save()
+    if data['more']:
+        parser_comments(song_id, before_time, song)
+    else:
+        print 'Finished parser_comments song_id: {} Cost: {}'.format(song_id, time.time() - start)
