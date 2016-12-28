@@ -37,13 +37,13 @@ def fetch(url, retry=0):
         raise
 
 
-def post(url):
+def post(url, params):
     headers = {
         'Cookie': 'appver=1.5.0.75771;',
         'Referer': 'http://music.163.com/'
     }
 
-    return requests.post(url, headers=headers, data=gen_data())
+    return requests.post(url, headers=headers, data=gen_data(params))
 
 
 def get_tree(url):

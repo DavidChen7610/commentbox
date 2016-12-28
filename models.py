@@ -100,6 +100,9 @@ class Comment(BaseModel):
     like_count = db.IntField()
     user = db.ReferenceField('User')
     song = db.ReferenceField('Song')
+    timestamp = db.IntField()
+    time = db.DateTimeField()
+    be_replied = db.IntField()
     meta = {
         'indexes': [
             '-like_count'
@@ -183,6 +186,11 @@ class User(BaseModel):
     @property
     def url(self):
         return USER_URL.format(self.id)
+
+
+class BeReplied(BaseModel):
+    content = db.StringField()
+    user = db.ReferenceField('User')
 
 
 class Process(BaseModel):

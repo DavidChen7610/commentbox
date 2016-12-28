@@ -1,9 +1,10 @@
 # coding=utf-8
+from datetime import datetime
 import time
 
 from mongoengine.connection import disconnect
 
-from models import Artist, Song, Comment, User, Process
+from models import Artist, Song, Comment, User, Process, BeReplied
 from app import create_app
 
 from spider.utils import get_user_agent, get_tree, post
@@ -16,8 +17,11 @@ COMMENTS_URL = 'http://music.163.com/weapi/v1/resource/comments/R_SO_4_{}'  # no
 # =========================
 HOME_URL = 'http://music.163.com/#/user/home?id={}'
 PLAYLIST_URL = 'http://music.163.com/playlist?id={}'
+
+
 # 评论完整API before_time=0 获取最新时间 limit=100 返回100条 默认时间降序(从新到旧)
-COMMENTS_URL_ = 'http://music.163.com/weapi/v1/resource/comments/R_SO_4_{}?limit=100&before_time={}&compareUserLocation=true&commentId=0&composeConcert=true'
+# COMMENTS_URL_ = 'http://music.163.com/weapi/v1/resource/comments/R_SO_4_{}?limit=100&before_time={}' \
+#                 '&compareUserLocation=true&commentId=0&composeConcert=true'
 
 
 def parser_artist_list(cat_id, initial_id):
@@ -71,11 +75,11 @@ def parser_artist(artist_id):
 def parser_song(song_id, artist):
     tree = get_tree(SONG_URL.format(song_id))
     song = Song.objects.filter(id=song_id)
-    r = post(COMMENTS_URL.format(song_id))
-    if r.status_code != 200:
-        print 'API Error: Song {}'.format(song_id)
-        return
-    data = r.json()
+    # r = post(COMMENTS_URL.format(song_id), "")
+    # if r.status_code != 200:
+    #     print 'API Error: Song {}'.format(song_id)
+    #     return
+    # data = r.json()
     if not song:
         for404 = tree.xpath('//div[@class="n-for404"]')
         if for404:
@@ -91,29 +95,28 @@ def parser_song(song_id, artist):
                 print 'Fetch limit!'
                 time.sleep(10)
                 return parser_song(song_id, artist)
-        song = Song(id=song_id, name=song_name, artist=artist,
-                    comment_count=data['total'])
+        song = Song(id=song_id, name=song_name, artist=artist)  # comment_count=data['total']
         song.save()
     else:
         song = song[0]
-    comments = []
-    for comment_ in data['hotComments']:
-        comment_id = comment_['commentId']
-        content = comment_['content']
-        like_count = comment_['likedCount']
-        user = comment_['user']
-        if not user:
-            continue
-        user = User.get_or_create(id=user['userId'], name=user['nickname'],
-                                  picture=user['avatarUrl'])
-        comment = Comment.get_or_create(id=comment_id, content=content,
-                                        like_count=like_count, user=user,
-                                        song=song)
-        comment.save()
-        comments.append(comment)
-    song.comments = comments
-    song.save()
-    time.sleep(1)
+    # comments = []
+    # for comment_ in data['hotComments']:
+    #     comment_id = comment_['commentId']
+    #     content = comment_['content']
+    #     like_count = comment_['likedCount']
+    #     user = comment_['user']
+    #     if not user:
+    #         continue
+    #     user = User.get_or_create(id=user['userId'], name=user['nickname'],
+    #                               picture=user['avatarUrl'])
+    #     comment = Comment.get_or_create(id=comment_id, content=content,
+    #                                     like_count=like_count, user=user,
+    #                                     song=song)
+    #     comment.save()
+    #     comments.append(comment)
+    # song.comments = comments
+    # song.save()
+    # time.sleep(1)
     return song
 
 
@@ -135,9 +138,9 @@ def unprocess_playlist_list():
 # 爬取歌单数据
 def parser_playlist(playlist_id):
     create_app()
-    process = Process.get_or_create(id=playlist_id)
-    if process.is_success:
-        return
+    # process = Process.get_or_create(id=playlist_id)
+    # if process.is_success:
+    #     return
 
     print 'Starting parser_playlist playlist_id: {}'.format(playlist_id)
     start = time.time()
@@ -160,7 +163,7 @@ def parser_playlist(playlist_id):
     for item in song_items:
         song_id = item.split('=')[1]
         song = parser_song(song_id, artist)
-        parser_comments(song_id, 0, song)
+        parser_comments(song, 0)
         if song is not None:
             songs.append(song)
     artist.songs = songs
@@ -171,36 +174,65 @@ def parser_playlist(playlist_id):
 
 
 # 爬取指定song的所有评论
-def parser_comments(song_id, before_time, song):
-    print 'Starting parser_comments song_id: {}'.format(song_id)
+def parser_comments(song, before_time):
+    print 'Starting parser_comments song_id: {}'.format(song.id)
     print 'song_name: ' + song.name
     start = time.time()
 
-    r = post(COMMENTS_URL_.format(song_id, before_time))
+    params = {"limit": "30", "compareUserLocation": "true", "beforeTime": before_time, "composeConcert": "true",
+              "commentId": "0"}
+    r = post(COMMENTS_URL.format(song.id), params)
     if r.status_code != 200:
-        print 'API Error: Song {}'.format(song_id)
+        print 'API Error: Song {}'.format(song.id)
         return
     data = r.json()
 
     comments = []
     for comment_ in data['comments']:
         comment_id = comment_['commentId']
+        # 检测数据库中是否已存在当前获取的最新评论
+        comment = Comment.objects.filter(id=comment_id)
+        if comment:
+            return
         content = comment_['content']
         like_count = comment_['likedCount']
         user = comment_['user']
-        before_time = comment_['time']
+        timestamp = comment_['time']
+
+        be_replied = comment_['beReplied']  # 当前评论所回复的评论
+        if be_replied:
+            for replied in be_replied:
+                content_ = replied['content']
+                user_ = replied['user']
+                if not user_:
+                    continue
+                user_ = User.get_or_create(id=user_['userId'], name=user_['nickname'],
+                                           picture=user_['avatarUrl'])
+                be_replied_db = BeReplied.get_or_create(id=comment_id, content=content_, user=user_)
+                be_replied_db.save()
+
         if not user:
             continue
         user = User.get_or_create(id=user['userId'], name=user['nickname'],
                                   picture=user['avatarUrl'])
-        comment = Comment.get_or_create(id=comment_id, content=content,
-                                        like_count=like_count, user=user,
-                                        song=song)
+        date_time = datetime.fromtimestamp(timestamp / 1000)  # 去除时间戳后三位(可能是时区)
+        comment = Comment.get_or_create(id=comment_id, content=content, timestamp=timestamp,
+                                        time=date_time, like_count=like_count, user=user, be_replied=len(be_replied))
         comment.save()
         comments.append(comment)
     song.comments = comments
     song.save()
+
     if data['more']:
-        parser_comments(song_id, before_time, song)
+        time.sleep(1)  # 休息休息
+        parser_comments(song, comments.__getitem__(len(comments) - 1).timestamp)
     else:
-        print 'Finished parser_comments song_id: {} Cost: {}'.format(song_id, time.time() - start)
+        print 'Finished parser_comments song_id: {} Cost: {}'.format(song.id, time.time() - start)
+
+
+def parser_test(song_id):
+    create_app()
+
+    song = Song.objects.filter(id=song_id)
+    song = Song(id=song_id, name='test')
+    parser_comments(song_id, 0, song)
