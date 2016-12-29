@@ -95,7 +95,10 @@ def parser_song(song_id, artist):
                 print 'Fetch limit!'
                 time.sleep(10)
                 return parser_song(song_id, artist)
-        song = Song(id=song_id, name=song_name, artist=artist)  # comment_count=data['total']
+        if not artist:
+            song = Song(id=song_id, name=song_name)
+        else:
+            song = Song(id=song_id, name=song_name, artist=artist)  # comment_count=data['total']
         song.save()
     else:
         song = song[0]
@@ -138,9 +141,9 @@ def unprocess_playlist_list():
 # 爬取歌单数据
 def parser_playlist(playlist_id):
     create_app()
-    # process = Process.get_or_create(id=playlist_id)
-    # if process.is_success:
-    #     return
+    process = Process.get_or_create(id=playlist_id)
+    if process.is_success:
+        return
 
     print 'Starting parser_playlist playlist_id: {}'.format(playlist_id)
     start = time.time()
@@ -179,7 +182,7 @@ def parser_comments(song, before_time):
     print 'song_name: ' + song.name
     start = time.time()
 
-    params = {"limit": "30", "compareUserLocation": "true", "beforeTime": before_time, "composeConcert": "true",
+    params = {"limit": "100", "compareUserLocation": "true", "beforeTime": before_time, "composeConcert": "true",
               "commentId": "0"}
     r = post(COMMENTS_URL.format(song.id), params)
     if r.status_code != 200:
@@ -230,9 +233,11 @@ def parser_comments(song, before_time):
         print 'Finished parser_comments song_id: {} Cost: {}'.format(song.id, time.time() - start)
 
 
-def parser_test(song_id):
+def parser_song_comments(song_id):
     create_app()
-
-    song = Song.objects.filter(id=song_id)
-    song = Song(id=song_id, name='test')
-    parser_comments(song_id, 0, song)
+    # tree = get_tree(SONG_URL.format(song_id))
+    # song_name = tree.xpath('//em[@class="f-ff2"]/text()')[0].strip()
+    # song = Song(id=song_id, name=song_name)
+    # song.save()
+    song = parser_song(song_id[0], None)
+    parser_comments(song, 0)
