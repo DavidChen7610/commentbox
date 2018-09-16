@@ -64,3 +64,16 @@
 执行完毕就会在生成新的static/js/dist/index.bundle.js*文件了。
 
 Enjoy it!
+
+===================================
+
+#### 修改：
+
+```
+1、爬虫项目修改为python3.5运行
+2、增加一个run_demo.py的爬虫demo，功能是获取精彩评论
+3、修改encrypt.py里的解密部分
+4、修改run.py为单线程，方便调试
+5、删除views包下__init__.py里内容
+6、修改spider包下utils.py里post的headers部分
+```

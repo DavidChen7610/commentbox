@@ -37,9 +37,9 @@ class BaseModel(db.Document):
         key = OBJ_KEY.format(coll_name=coll_name, id=id)
         rs = cache.get(key)
         if rs:
-            return cls.from_json(rs)
+            return cls.from_json(rs)  # Converts json data to an unsaved document instance
         rs = cls.objects.get(id=id)
-        cache.set(key, rs.to_json())
+        cache.set(key, rs.to_json())  # Convert this document to JSON.
         return rs
 
     @classmethod
@@ -111,17 +111,19 @@ class Comment(BaseModel):
         return self.user.url
 
     @property
-    def user_url(self):
+    def artist_url(self):
         return self.song.artist_url
 
     @classmethod
     def cache_by_key(cls, key, ids):
+        """给内部用"""
         cache.delete(key)
         cache.rpush(key, *ids)
         cache.expire(key, TIMEOUT)
 
     @classmethod
     def get_random_by_session_id(cls, session_id, start=0, limit=20):
+        """给API用"""
         key = RANDOM_KEY.format(session_id=session_id)
         if not start % SAMPLE_SIZE:
             ids = cls.get_sample_ids(SAMPLE_SIZE)
@@ -138,12 +140,13 @@ class Comment(BaseModel):
 
     @classmethod
     def order_by_star(cls, start=0, limit=20):
+        """给API用"""
         ids = cache.lrange(STAR_KEY, start, start + limit)
         if not ids:
             ids = [c.id for c in cls.objects.order_by('-like_count')[:TOTAL_SIZE]]  # noqa
             cache.delete(STAR_KEY)
             cache.rpush(STAR_KEY, *ids)
-            ids = ids[start : start + limit]
+            ids = ids[start: start + limit]
         return cls.get_multi(ids)
 
     def to_dict(self):
@@ -201,6 +204,7 @@ class Process(BaseModel):
 
 
 def search(subject_id, type):
+    """给API用"""
     key = SEARCH_KEY.format(id=subject_id, type=type)
 
     if not subject_id:
@@ -224,6 +228,7 @@ def search(subject_id, type):
 
 
 def suggest(text):
+    """给API用"""
     if isinstance(text, unicode):
         text = text.encode('utf-8')
     key = SUGGEST_KEY.format(text=text)

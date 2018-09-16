@@ -5,7 +5,7 @@ from mongoengine.connection import disconnect
 from models import Artist, Song, Comment, User, Process
 from app import create_app
 
-from spider.utils import get_user_agent, get_tree, post
+from spider.utils import get_tree, post
 
 DISCOVER_URL = 'http://music.163.com/discover/artist/cat?id={}&initial={}'
 ARTIST_URL = 'http://music.163.com/artist?id={}'
@@ -28,45 +28,45 @@ def unprocess_artist_list():
 
 def parser_artist(artist_id):
     create_app()
-    process = Process.get_or_create(id=artist_id)
+    process = Process.get_or_create(id=artist_id)  # Process以歌手为单位
     if process.is_success:
         return
 
-    print 'Starting fetch artist: {}'.format(artist_id)
+    print('Starting fetch artist: {}'.format(artist_id))
     start = time.time()
     process = Process.get_or_create(id=artist_id)
 
-    tree = get_tree(ARTIST_URL.format(artist_id))
+    tree = get_tree(ARTIST_URL.format(artist_id))  # 使用requests获取页面文本，转化为lxml对象
 
     artist = Artist.objects.filter(id=artist_id)
-    if not artist:
+    if not artist:  # 如果之前没抓过
         artist_name = tree.xpath('//h2[@id="artist-name"]/text()')[0]
         picture = tree.xpath(
             '//div[contains(@class, "n-artist")]//img/@src')[0]
         artist = Artist(id=artist_id, name=artist_name, picture=picture)
         artist.save()
-    else:
+    else:  # 如果之前抓过，但是该歌手的歌曲没抓完
         artist = artist[0]
     song_items = tree.xpath('//div[@id="artist-top50"]//ul/li/a/@href')
     songs = []
     for item in song_items:
         song_id = item.split('=')[1]
-        song = parser_song(song_id, artist)
+        song = parser_song(song_id, artist)  # 进入抓取和解析歌手模式
         if song is not None:
             songs.append(song)
     artist.songs = songs
     artist.save()
-    process.make_succeed()
-    print 'Finished fetch artist: {} Cost: {}'.format(
-        artist_id, time.time() - start)
+    process.make_succeed()  # 标记歌手下的热门歌曲的热门评论抓完
+    print('Finished fetch artist: {} Cost: {}'.format(
+        artist_id, time.time() - start))
 
 
 def parser_song(song_id, artist):
     tree = get_tree(SONG_URL.format(song_id))
     song = Song.objects.filter(id=song_id)
-    r = post(COMMENTS_URL.format(song_id))
+    r = post(COMMENTS_URL.format(song_id))  # 必须post一些东西才能获取评论信息
     if r.status_code != 200:
-        print 'API Error: Song {}'.format(song_id)
+        print('API Error: Song {}'.format(song_id))
         return
     data = r.json()
     if not song:
@@ -81,7 +81,7 @@ def parser_song(song_id, artist):
                 song_name = tree.xpath(
                     '//meta[@name="keywords"]/@content')[0].strip()
             except IndexError:
-                print 'Fetch limit!'
+                print('Fetch limit!')
                 time.sleep(10)
                 return parser_song(song_id, artist)
         song = Song(id=song_id, name=song_name, artist=artist,

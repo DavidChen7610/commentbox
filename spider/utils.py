@@ -38,14 +38,27 @@ def fetch(url, retry=0):
 
 
 def post(url):
+    # headers = {
+    #     'Cookie': 'appver=1.5.0.75771;',
+    #     'Referer': 'http://music.163.com/'
+    # }
+
     headers = {
-        'Cookie': 'appver=1.5.0.75771;',
-        'Referer': 'http://music.163.com/'
+        'user-agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/68.0.3440.106 Safari/537.36'  # noqa
     }
 
     return requests.post(url, headers=headers, data=gen_data())
 
 
 def get_tree(url):
+    # import re
+    # import os
+
     r = fetch(url)
+    # pat = re.compile('com/([a-z]+)\W')
+    # fileName = os.path.join(os.getcwd(), 'html', pat.findall(url)[0] + ".html")
+    # with open(fileName, 'w') as f:
+    #     f.write(r.text)
+
     return etree.HTML(r.text)
