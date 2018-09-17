@@ -5,7 +5,7 @@ from lxml import etree
 from fake_useragent import UserAgent
 
 from spider.encrypt import gen_data
-from config import PROXIES
+from config import PROXIES, DATA_DB
 
 
 TIMEOUT = 5
@@ -18,7 +18,7 @@ def choice_proxy():
 
 
 def get_user_agent():
-    ua = UserAgent()
+    ua = UserAgent(path=DATA_DB)
     return ua.random
 
 
